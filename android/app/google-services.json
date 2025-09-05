@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1024089483193",
+    "project_id": "student-attendance-bhss",
+    "storage_bucket": "student-attendance-bhss.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1024089483193:android:63a3b17ff95a399802f868",
+        "android_client_info": {
+          "package_name": "com.developerruhban.studentattendanceapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1024089483193-bhqciubakcaaqdm0hn1ndmhk801qdius.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.developerruhban.studentattendanceapp",
+            "certificate_hash": "7cc8579fb67baac7ee62ff48b2ddb5442ebb3e97"
+          }
+        },
+        {
+          "client_id": "1024089483193-s61qv82k2dhcd503ruqkg3u73udhq50b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3Vi6aY4eV2OtD14x9uxTb0LZhPcEjbG0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1024089483193-s61qv82k2dhcd503ruqkg3u73udhq50b.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
