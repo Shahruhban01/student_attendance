@@ -1,4 +1,4 @@
-// students_screen.dart
+// students_screen.dart - Modern & Professional Design
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,17 +10,42 @@ class StudentsScreen extends StatefulWidget {
   State<StudentsScreen> createState() => _StudentsScreenState();
 }
 
-class _StudentsScreenState extends State<StudentsScreen> {
+class _StudentsScreenState extends State<StudentsScreen> 
+    with SingleTickerProviderStateMixin {
   final user = FirebaseAuth.instance.currentUser;
   String selectedClassFilter = 'All';
   List<Map<String, dynamic>> classes = [];
-
   String? _lastSelectedClassId;
+  
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
     _loadClasses();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutCubic,
+    ));
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadClasses() async {
@@ -39,317 +64,914 @@ class _StudentsScreenState extends State<StudentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          // Filter by class
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.indigo.shade50,
+              Colors.white,
+            ],
+          ),
+        ),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: Column(
               children: [
-                const Text(
-                  'Filter by class: ',
-                  style: TextStyle(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(width: 8),
+                _buildFilterHeader(),
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButton<String>(
-                      value: selectedClassFilter,
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: [
-                        const DropdownMenuItem(
-                          value: 'All',
-                          child: Text(
-                            'All Students',
-                            style: TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                        ...classes.map(
-                          (cls) => DropdownMenuItem(
-                            value: cls['id'],
-                            child: Text('${cls['name']} - ${cls['subject']}'),
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          selectedClassFilter = value ?? 'All';
-                        });
-                      },
-                    ),
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _getStudentsStream(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return _buildErrorState(snapshot.error.toString());
+                      }
+
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return _buildLoadingState();
+                      }
+
+                      final students = snapshot.data?.docs ?? [];
+
+                      if (students.isEmpty) {
+                        return _buildEmptyState();
+                      }
+
+                      return _buildStudentsList(students);
+                    },
                   ),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+      floatingActionButton: _buildFloatingActionButton(),
+    );
+  }
 
-          // Students list
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _getStudentsStream(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final students = snapshot.data?.docs ?? [];
-
-                if (students.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Colors.indigo.shade50,
-                            borderRadius: BorderRadius.circular(50),
-                          ),
-                          child: Icon(
-                            Icons.people_outline,
-                            size: 48,
-                            color: Colors.indigo.shade400,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No students yet',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Tap the + button to add your first student',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: students.length,
-                  itemBuilder: (context, index) {
-                    final studentData =
-                        students[index].data() as Map<String, dynamic>;
-                    final studentClasses = _getStudentClasses(
-                      studentData['classIds'] as List?,
-                    );
-
-                    return Card(
-                      elevation: 2,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.all(16),
-                        leading: Hero(
-                          tag: 'student_${students[index].id}',
-                          child: CircleAvatar(
-                            radius: 28,
-                            backgroundColor: Colors.indigo,
-                            child: Text(
-                              studentData['name']
-                                      ?.substring(0, 1)
-                                      .toUpperCase() ??
-                                  'S',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        title: Text(
-                          studentData['name'] ?? 'Unnamed Student',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.indigo.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Roll: ${studentData['rollNumber'] ?? 'N/A'}',
-                                    style: TextStyle(
-                                      color: Colors.indigo.shade700,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (studentData['phoneNumber']?.isNotEmpty ==
-                                true) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                studentData['phoneNumber'],
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                            if (studentClasses.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Wrap(
-                                spacing: 4,
-                                children: studentClasses
-                                    .map(
-                                      (className) => Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.shade50,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          className,
-                                          style: TextStyle(
-                                            color: Colors.green.shade700,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
-                            ],
-                          ],
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.edit,
-                                    size: 18,
-                                    color: Colors.blue.shade600,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text('Edit'),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 'assign',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.class_,
-                                    size: 18,
-                                    color: Colors.green.shade600,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text('Assign Classes'),
-                                ],
-                              ),
-                            ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.delete,
-                                    size: 18,
-                                    color: Colors.red.shade600,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text('Delete'),
-                                ],
-                              ),
-                            ),
-                          ],
-                          onSelected: (value) {
-                            switch (value) {
-                              case 'edit':
-                                _showEditStudentDialog(
-                                  students[index].id,
-                                  studentData,
-                                );
-                                break;
-                              case 'assign':
-                                _showAssignClassesDialog(
-                                  students[index].id,
-                                  studentData,
-                                );
-                                break;
-                              case 'delete':
-                                _deleteStudent(
-                                  students[index].id,
-                                  studentData['name'] ?? 'Student',
-                                );
-                                break;
-                            }
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+  Widget _buildFilterHeader() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.indigo.shade100,
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddStudentDialog(),
-        icon: const Icon(Icons.person_add),
-        label: const Text('Add Student'),
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.indigo.shade400, Colors.indigo.shade600],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.filter_list,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: Colors.indigo.shade200),
+                ),
+                child: DropdownButton<String>(
+                  value: selectedClassFilter,
+                  isExpanded: true,
+                  underline: const SizedBox(),
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.indigo.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'All',
+                      child: Row(
+                        children: [
+                          Icon(Icons.groups, color: Colors.indigo.shade600, size: 20),
+                          const SizedBox(width: 8),
+                          const Text('All Students'),
+                        ],
+                      ),
+                    ),
+                    ...classes.map(
+                      (cls) => DropdownMenuItem(
+                        value: cls['id'],
+                        child: Row(
+                          children: [
+                            Icon(Icons.class_, color: Colors.green.shade600, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${cls['name']} - ${cls['subject']}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      selectedClassFilter = value ?? 'All';
+                    });
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.error_outline,
+              size: 48,
+              color: Colors.red.shade400,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Something went wrong',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            error,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey.shade500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo.shade400),
+              strokeWidth: 3,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Loading students...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.indigo.shade100, Colors.indigo.shade200],
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.indigo.shade200,
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.people_outline,
+              size: 64,
+              color: Colors.indigo.shade600,
+            ),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            'No Students Yet',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Add your first student to start\nmanaging attendance records',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade500,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 32),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade50,
+              borderRadius: BorderRadius.circular(25),
+              border: Border.all(color: Colors.indigo.shade200),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.person_add, color: Colors.indigo.shade600, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Tap the + button to get started',
+                  style: TextStyle(
+                    color: Colors.indigo.shade600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentsList(List<QueryDocumentSnapshot> students) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: students.length,
+      itemBuilder: (context, index) {
+        final studentData = students[index].data() as Map<String, dynamic>;
+        final studentClasses = _getStudentClasses(studentData['classIds'] as List?);
+        
+        return _buildStudentCard(
+          students[index].id,
+          studentData,
+          studentClasses,
+          index,
+        );
+      },
+    );
+  }
+
+  Widget _buildStudentCard(
+    String studentId,
+    Map<String, dynamic> studentData,
+    List<String> studentClasses,
+    int index,
+  ) {
+    final colors = [
+      [Colors.indigo, Colors.purple],
+      [Colors.teal, Colors.cyan],
+      [Colors.orange, Colors.red],
+      [Colors.green, Colors.lightGreen],
+      [Colors.deepPurple, Colors.indigo],
+    ];
+    
+    final colorPair = colors[index % colors.length];
+    final name = studentData['name'] ?? 'Unnamed Student';
+    final rollNumber = studentData['rollNumber']?.toString() ?? 'N/A';
+    final phoneNumber = studentData['phoneNumber'] ?? '';
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : 'S';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shadowColor: colorPair[0].withOpacity(0.3),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [colorPair[0].shade400, colorPair[1].shade600],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Row
+                Row(
+                  children: [
+                    Hero(
+                      tag: 'student_$studentId',
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            initials,
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: colorPair[0].shade600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Roll: $rollNumber',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildModernPopupMenu(studentId, studentData, colorPair[0]),
+                  ],
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Details Row
+                if (phoneNumber.isNotEmpty || studentClasses.isNotEmpty) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Phone Number
+                      if (phoneNumber.isNotEmpty) ...[
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.phone, color: Colors.white, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    phoneNumber,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (studentClasses.isNotEmpty) const SizedBox(width: 12),
+                      ],
+                      
+                      // Classes
+                      if (studentClasses.isNotEmpty)
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.class_, color: Colors.white, size: 16),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Classes (${studentClasses.length})',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: studentClasses.take(3).map((className) => 
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.3),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        className,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ).toList(),
+                                ),
+                                if (studentClasses.length > 3)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      '+${studentClasses.length - 3} more',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.white.withOpacity(0.8),
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernPopupMenu(String studentId, Map<String, dynamic> studentData, Color baseColor) {
+    return PopupMenuButton<String>(
+      icon: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.more_vert,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      color: Colors.white,
+      elevation: 8,
+      itemBuilder: (context) => [
+        _buildPopupMenuItem(Icons.edit, 'Edit', 'edit', Colors.blue),
+        _buildPopupMenuItem(Icons.class_, 'Assign Classes', 'assign', Colors.green),
+        const PopupMenuDivider(),
+        _buildPopupMenuItem(Icons.delete, 'Delete', 'delete', Colors.red),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'edit':
+            _showEditStudentDialog(studentId, studentData);
+            break;
+          case 'assign':
+            _showAssignClassesDialog(studentId, studentData);
+            break;
+          case 'delete':
+            _deleteStudent(studentId, studentData['name'] ?? 'Student');
+            break;
+        }
+      },
+    );
+  }
+
+  PopupMenuItem<String> _buildPopupMenuItem(
+    IconData icon, 
+    String text, 
+    String value, 
+    Color color,
+  ) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingActionButton() {
+    return FloatingActionButton.extended(
+      onPressed: _showAddStudentDialog,
+      icon: const Icon(Icons.person_add),
+      label: const Text('Add Student'),
+      backgroundColor: Colors.indigo.shade600,
+      foregroundColor: Colors.white,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
+  }
+
+  // Modern Add Student Dialog
+  void _showAddStudentDialog() {
+    final nameController = TextEditingController();
+    final rollController = TextEditingController();
+    final phoneController = TextEditingController();
+
+    String? selectedClassId = _lastSelectedClassId ?? 
+        (classes.isNotEmpty ? classes.first['id'] : null);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (ctx, setState) {
+          bool isLoading = false;
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.9,
+              constraints: const BoxConstraints(maxHeight: 600),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(25),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Colors.white, Colors.indigo.shade50],
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.indigo.shade400, Colors.indigo.shade600],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.person_add,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Add New Student',
+                                    style: TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Fill in student details below',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Form Fields
+                      _buildModernTextField(
+                        nameController, 
+                        'Student Name', 
+                        Icons.person_outline,
+                        !isLoading,
+                        TextInputType.text,
+                        true,
+                      ),
+                      const SizedBox(height: 16),
+
+                      _buildModernTextField(
+                        rollController, 
+                        'Roll Number', 
+                        Icons.numbers,
+                        !isLoading,
+                        TextInputType.number,
+                        false,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Class Dropdown
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: Colors.indigo.shade200),
+                          color: Colors.indigo.shade50,
+                        ),
+                        child: DropdownButtonFormField<String>(
+                          value: selectedClassId,
+                          decoration: const InputDecoration(
+                            labelText: 'Select Class',
+                            prefixIcon: Icon(Icons.class_, color: Colors.indigo),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 16,
+                            ),
+                            labelStyle: TextStyle(color: Colors.indigo),
+                          ),
+                          items: classes.isEmpty
+                              ? [
+                                  const DropdownMenuItem<String>(
+                                    value: null,
+                                    child: Text('No classes available'),
+                                  )
+                                ]
+                              : classes.map<DropdownMenuItem<String>>((cls) {
+                                  return DropdownMenuItem<String>(
+                                    value: cls['id'],
+                                    child: Text('${cls['name']} - ${cls['subject']}'),
+                                  );
+                                }).toList(),
+                          onChanged: isLoading || classes.isEmpty ? null : (newValue) {
+                            setState(() {
+                              selectedClassId = newValue;
+                            });
+                          },
+                          style: TextStyle(color: Colors.indigo.shade700),
+                          dropdownColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      _buildModernTextField(
+                        phoneController, 
+                        'Phone Number (Optional)', 
+                        Icons.phone_outlined,
+                        !isLoading,
+                        TextInputType.phone,
+                        false,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Action Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: isLoading ? null : () => Navigator.of(ctx).pop(),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  side: BorderSide(color: Colors.grey.shade300),
+                                ),
+                              ),
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton(
+                              onPressed: isLoading ? null : () async {
+                                setState(() {
+                                  isLoading = true;
+                                });
+
+                                await _addStudentAndContinue(
+                                  ctx,
+                                  setState,
+                                  nameController,
+                                  rollController,
+                                  phoneController,
+                                  selectedClassId,
+                                );
+
+                                setState(() {
+                                  isLoading = false;
+                                });
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.indigo.shade600,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                elevation: 3,
+                              ),
+                              child: isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  : const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add_circle_outline, size: 20),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Add Student',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildModernTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+    bool enabled,
+    TextInputType keyboardType,
+    bool autofocus,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(15),
+        color: enabled ? Colors.white : Colors.grey.shade100,
+        border: Border.all(color: Colors.indigo.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.indigo.shade100.withOpacity(0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        enabled: enabled,
+        autofocus: autofocus,
+        keyboardType: keyboardType,
+        textCapitalization: keyboardType == TextInputType.text 
+            ? TextCapitalization.words 
+            : TextCapitalization.none,
+        style: TextStyle(
+          fontSize: 16,
+          color: Colors.indigo.shade700,
+          fontWeight: FontWeight.w500,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: Colors.indigo.shade600),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+          labelStyle: TextStyle(
+            color: Colors.indigo.shade600,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Keep all your existing backend methods with modern SnackBars
   Stream<QuerySnapshot> _getStudentsStream() {
     Query query = FirebaseFirestore.instance
         .collection('students')
@@ -369,297 +991,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
         .where((cls) => classIds.contains(cls['id']))
         .map((cls) => cls['name'] as String)
         .toList();
-  }
-
-  // ENHANCED ADD STUDENT DIALOG - WITH CLASS DROPDOWN & PHONE NUMBER
-  void _showAddStudentDialog() {
-    final nameController = TextEditingController();
-    final rollController = TextEditingController();
-    final phoneController = TextEditingController();
-
-    // Prefill with previously selected class or first available class
-    String? selectedClassId =
-        _lastSelectedClassId ??
-        (classes.isNotEmpty ? classes.first['id'] : null);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (ctx, setState) {
-          bool isLoading = false;
-
-          return Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.indigo.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Icons.person_add,
-                            color: Colors.indigo.shade700,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Add New Student',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                'Fill in the details below',
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Form Fields
-                    TextField(
-                      controller: nameController,
-                      decoration: InputDecoration(
-                        labelText: 'Student Name *',
-                        prefixIcon: const Icon(Icons.person_outline),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                      ),
-                      autofocus: true,
-                      textCapitalization: TextCapitalization.words,
-                      enabled: !isLoading,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    TextField(
-                      controller: rollController,
-                      decoration: InputDecoration(
-                        labelText: 'Roll Number *',
-                        prefixIcon: const Icon(Icons.numbers),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                      ),
-                      keyboardType: TextInputType.number,
-                      enabled: !isLoading,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Class Dropdown
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade400),
-                        color: Colors.grey.shade50,
-                      ),
-                      child: DropdownButtonFormField<String>(
-                        value: selectedClassId,
-                        decoration: const InputDecoration(
-                          labelText: 'Select Class *',
-                          prefixIcon: Icon(Icons.class_),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                        ),
-                        items: classes.isEmpty
-                            ? [
-                                const DropdownMenuItem<String>(
-                                  value: null,
-                                  child: Text('No classes available'),
-                                ),
-                              ]
-                            : classes.map<DropdownMenuItem<String>>((cls) {
-                                return DropdownMenuItem<String>(
-                                  value: cls['id'],
-                                  child: Text(
-                                    '${cls['name']} - ${cls['subject']}',
-                                  ),
-                                );
-                              }).toList(),
-                        onChanged: isLoading || classes.isEmpty
-                            ? null
-                            : (String? newValue) {
-                                setState(() {
-                                  selectedClassId = newValue;
-                                });
-                              },
-                        hint: const Text('Choose a class for the student'),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    TextField(
-                      controller: phoneController,
-                      decoration: InputDecoration(
-                        labelText: 'Phone Number (Optional)',
-                        prefixIcon: const Icon(Icons.phone_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                      ),
-                      keyboardType: TextInputType.phone,
-                      enabled: !isLoading,
-                    ),
-
-                    const SizedBox(height: 8),
-                    Text(
-                      '* Required fields',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Action Buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextButton(
-                            onPressed: isLoading
-                                ? null
-                                : () => Navigator.of(ctx).pop(),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: Colors.grey.shade300),
-                              ),
-                            ),
-                            child: const Text('Cancel'),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton(
-                            onPressed: isLoading
-                                ? null
-                                : () async {
-                                    setState(() {
-                                      isLoading = true;
-                                    });
-
-                                    await _addStudentAndContinue(
-                                      ctx,
-                                      setState,
-                                      nameController,
-                                      rollController,
-                                      phoneController,
-                                      selectedClassId,
-                                    );
-
-                                    setState(() {
-                                      isLoading = false;
-                                    });
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.indigo,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 2,
-                            ),
-                            child: isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.add_circle_outline, size: 20),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Add Student',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Future<int> _getNextRollNumber() async {
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('students')
-          .where('teacherId', isEqualTo: user?.uid)
-          .get();
-
-      if (snapshot.docs.isEmpty) return 1;
-
-      // Find the highest roll number
-      int maxRoll = 0;
-      for (var doc in snapshot.docs) {
-        final rollStr = doc.data()['rollNumber'] as String?;
-        final roll = int.tryParse(rollStr ?? '0') ?? 0;
-        if (roll > maxRoll) maxRoll = roll;
-      }
-
-      return maxRoll + 1;
-    } catch (e) {
-      return 1;
-    }
   }
 
   Future<void> _addStudentAndContinue(
@@ -686,6 +1017,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
           ),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
       return;
@@ -697,21 +1029,17 @@ class _StudentsScreenState extends State<StudentsScreen> {
         'rollNumber': rollNumber,
         'phoneNumber': phoneNumber,
         'teacherId': user?.uid,
-        'classIds': [selectedClassId], // Assign to selected class
+        'classIds': [selectedClassId],
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // Update the class document to include this student
       await FirebaseFirestore.instance
           .collection('classes')
           .doc(selectedClassId)
           .update({
-            'studentIds': FieldValue.arrayUnion([
-              'temp_id',
-            ]), // We'll update this with actual ID
+            'studentIds': FieldValue.arrayUnion(['temp_id']),
           });
 
-      // Remember the selected class for next time
       _lastSelectedClassId = selectedClassId;
 
       if (!mounted) return;
@@ -729,13 +1057,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
               ),
               backgroundColor: Colors.green,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               duration: const Duration(seconds: 2),
             ),
           );
         }
       });
 
-      // Increment roll number and clear other fields
       final currentRoll = int.tryParse(rollNumber) ?? 0;
       final nextRoll = currentRoll + 1;
 
@@ -743,7 +1071,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
         nameController.clear();
         phoneController.clear();
         rollController.text = nextRoll.toString();
-        // Keep the same class selected for next student
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -767,6 +1094,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
               ),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           );
         }
@@ -774,49 +1102,60 @@ class _StudentsScreenState extends State<StudentsScreen> {
     }
   }
 
-  // EXISTING METHODS (Enhanced with better UI)
-  void _showEditStudentDialog(
-    String studentId,
-    Map<String, dynamic> studentData,
-  ) {
+  void _showEditStudentDialog(String studentId, Map<String, dynamic> studentData) {
     final nameController = TextEditingController(text: studentData['name']);
-    final rollController = TextEditingController(
-      text: studentData['rollNumber']?.toString() ?? '',
-    );
-    final phoneController = TextEditingController(
-      text: studentData['phoneNumber'],
-    );
+    final rollController = TextEditingController(text: studentData['rollNumber']?.toString() ?? '');
+    final phoneController = TextEditingController(text: studentData['phoneNumber']);
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Edit Student'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.edit, color: Colors.blue.shade600),
+            ),
+            const SizedBox(width: 12),
+            const Text('Edit Student', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Student Name',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
               ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: rollController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Roll Number',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
               ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: phoneController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Phone Number',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
               ),
               keyboardType: TextInputType.phone,
             ),
@@ -825,7 +1164,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
           ),
           ElevatedButton(
             onPressed: () => _updateStudent(
@@ -834,6 +1173,10 @@ class _StudentsScreenState extends State<StudentsScreen> {
               rollController.text,
               phoneController.text,
             ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade600,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             child: const Text('Update'),
           ),
         ],
@@ -841,70 +1184,61 @@ class _StudentsScreenState extends State<StudentsScreen> {
     );
   }
 
-  Future<void> _updateStudent(
-    String studentId,
-    String name,
-    String rollNumber,
-    String phoneNumber,
-  ) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('students')
-          .doc(studentId)
-          .update({
-            'name': name,
-            'rollNumber': rollNumber,
-            'phoneNumber': phoneNumber,
-          });
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Student updated successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
-  }
-
-  void _showAssignClassesDialog(
-    String studentId,
-    Map<String, dynamic> studentData,
-  ) {
-    List<String> selectedClasses = List<String>.from(
-      studentData['classIds'] ?? [],
-    );
+  void _showAssignClassesDialog(String studentId, Map<String, dynamic> studentData) {
+    List<String> selectedClasses = List<String>.from(studentData['classIds'] ?? []);
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.class_, color: Colors.green.shade600),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Assign Classes to ${studentData['name']}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
-          title: Text('Assign Classes to ${studentData['name']}'),
           content: SizedBox(
             width: double.maxFinite,
+            height: 300,
             child: ListView(
-              shrinkWrap: true,
               children: classes.map((cls) {
                 final isSelected = selectedClasses.contains(cls['id']);
-                return CheckboxListTile(
-                  title: Text(cls['name']),
-                  subtitle: Text(cls['subject']),
-                  value: isSelected,
-                  onChanged: (bool? value) {
-                    setState(() {
-                      if (value == true) {
-                        selectedClasses.add(cls['id']);
-                      } else {
-                        selectedClasses.remove(cls['id']);
-                      }
-                    });
-                  },
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: isSelected ? Colors.green.shade50 : null,
+                  ),
+                  child: CheckboxListTile(
+                    title: Text(cls['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(cls['subject']),
+                    value: isSelected,
+                    onChanged: (bool? value) {
+                      setState(() {
+                        if (value == true) {
+                          selectedClasses.add(cls['id']);
+                        } else {
+                          selectedClasses.remove(cls['id']);
+                        }
+                      });
+                    },
+                    activeColor: Colors.green.shade600,
+                  ),
                 );
               }).toList(),
             ),
@@ -912,11 +1246,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
             ),
             ElevatedButton(
-              onPressed: () =>
-                  _assignClassesToStudent(studentId, selectedClasses),
+              onPressed: () => _assignClassesToStudent(studentId, selectedClasses),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade600,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
               child: const Text('Assign'),
             ),
           ],
@@ -925,62 +1262,88 @@ class _StudentsScreenState extends State<StudentsScreen> {
     );
   }
 
-  // Future<void> _updateStudent(
-  //   String studentId,
-  //   String name,
-  //   String rollNumber,
-  //   String email,
-  // ) async {
-  //   try {
-  //     await FirebaseFirestore.instance
-  //         .collection('students')
-  //         .doc(studentId)
-  //         .update({'name': name, 'rollNumber': rollNumber, 'email': email});
-  //     Navigator.pop(context);
-  //     ScaffoldMessenger.of(context).showSnackBar(
-  //       const SnackBar(
-  //         content: Text('Student updated successfully'),
-  //         backgroundColor: Colors.green,
-  //       ),
-  //     );
-  //   } catch (e) {
-  //     ScaffoldMessenger.of(
-  //       context,
-  //     ).showSnackBar(SnackBar(content: Text('Error: $e')));
-  //   }
-  // }
-
-  Future<void> _assignClassesToStudent(
-    String studentId,
-    List<String> classIds,
-  ) async {
+  Future<void> _updateStudent(String studentId, String name, String rollNumber, String phoneNumber) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('students')
-          .doc(studentId)
-          .update({'classIds': classIds});
+      await FirebaseFirestore.instance.collection('students').doc(studentId).update({
+        'name': name,
+        'rollNumber': rollNumber,
+        'phoneNumber': phoneNumber,
+      });
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Student updated successfully'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('Error: $e'),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
 
-      // Update class documents to include this student
+  Future<void> _assignClassesToStudent(String studentId, List<String> classIds) async {
+    try {
+      await FirebaseFirestore.instance.collection('students').doc(studentId).update({
+        'classIds': classIds,
+      });
+
       for (String classId in classIds) {
-        await FirebaseFirestore.instance
-            .collection('classes')
-            .doc(classId)
-            .update({
-              'studentIds': FieldValue.arrayUnion([studentId]),
-            });
+        await FirebaseFirestore.instance.collection('classes').doc(classId).update({
+          'studentIds': FieldValue.arrayUnion([studentId]),
+        });
       }
 
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Classes assigned successfully'),
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Classes assigned successfully'),
+            ],
+          ),
           backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('Error: $e'),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
     }
   }
 
@@ -988,19 +1351,33 @@ class _StudentsScreenState extends State<StudentsScreen> {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Student'),
-        content: Text(
-          'Are you sure you want to delete "$studentName"? This action cannot be undone.',
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.warning, color: Colors.red.shade600),
+            ),
+            const SizedBox(width: 12),
+            const Text('Delete Student', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
         ),
+        content: Text('Are you sure you want to delete "$studentName"? This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -1009,20 +1386,36 @@ class _StudentsScreenState extends State<StudentsScreen> {
 
     if (shouldDelete == true) {
       try {
-        await FirebaseFirestore.instance
-            .collection('students')
-            .doc(studentId)
-            .delete();
+        await FirebaseFirestore.instance.collection('students').doc(studentId).delete();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Student "$studentName" deleted'),
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('Student "$studentName" deleted'),
+              ],
+            ),
             backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('Error: $e'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
       }
     }
   }

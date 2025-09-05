@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1024089483193-0n4uqovddlfu25pvpmbc06vk9vb7h24e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.developerruhban.studentattendanceapp",
+            "certificate_hash": "0d0edd728ea00089723332ecb0f8a44bf3763590"
+          }
+        },
+        {
           "client_id": "1024089483193-bhqciubakcaaqdm0hn1ndmhk801qdius.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -37,6 +45,13 @@
             {
               "client_id": "1024089483193-s61qv82k2dhcd503ruqkg3u73udhq50b.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "1024089483193-gnvr5v5bk3r1v3ooj7pbbs63e5p2i9qn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.studentAttendance"
+              }
             }
           ]
         }
